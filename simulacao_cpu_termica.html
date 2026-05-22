@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="style.css">
+<title>CPU Thermal Sim — MDF</title>
+
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">⬡</div>
+    <div>
+      <div class="logo-text">CPU Thermal Simulator</div>
+      <div class="logo-sub">Método das Diferenças Finitas — 2D</div>
+    </div>
+  </div>
+  <div class="header-pills">
+    <span class="pill pill-blue">∂T/∂t = α∇²T + Q̃</span>
+    <span class="pill pill-purple" id="pill-phase">CARGA MÁXIMA</span>
+    <span class="pill pill-red" id="pill-warn">⚠ CRÍTICO</span>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- LEFT: canvas + metrics -->
+  <div class="canvas-area">
+    <div class="canvas-wrap">
+      <canvas id="cpu" width="100" height="100"></canvas>
+      <div id="nuc-labels"></div>
+      <div class="stats-overlay" id="stats">
+        <div>T_max  <span class="val" id="s-tmax">35.0°C</span></div>
+        <div>T_med  <span class="val" id="s-tmed">35.0°C</span></div>
+        <div>ΔT     <span class="val" id="s-dt">0.0°C</span></div>
+        <div>Passo  <span class="val" id="s-step">0</span></div>
+        <div>t_sim  <span class="val" id="s-time">0.00 ms</span></div>
+      </div>
+      <div class="warn-crit" id="warn-crit">⚠ CRÍTICO &gt; 90°C</div>
+    </div>
+
+    <div class="colorbar-wrap">
+      <span id="cb-min">35°C</span>
+      <div class="colorbar"></div>
+      <span id="cb-max">—</span>
+    </div>
+
+    <div class="metrics">
+      <div class="metric">
+        <div class="metric-label">T máxima</div>
+        <div class="metric-value" id="m-tmax">35.0°C</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">T média</div>
+        <div class="metric-value" id="m-tmed">35.0°C</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">ΔT pico</div>
+        <div class="metric-value" id="m-dt">0.0°C</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Tempo sim.</div>
+        <div class="metric-value" id="m-time">0 ms</div>
+      </div>
+    </div>
+
+    <!-- Sparkline -->
+    <canvas id="sparkline" width="600" height="60"></canvas>
+
+    <!-- Equation reference -->
+    <div class="equation">
+      <div><span class="eq-label">Equação do Calor (Fourier 2D):</span></div>
+      <div><span class="eq-highlight">∂T/∂t</span> = α · (∂²T/∂x² + ∂²T/∂y²) + Q/(ρ·c)</div>
+      <div><span class="eq-label">Discretização (MDF explícito):</span></div>
+      <div>T<sub>i,j</sub><sup>n+1</sup> = T<sub>i,j</sub><sup>n</sup> + Δt·α·∇²T + Δt·Q̃ − Δt·h_conv·ΔT</div>
+      <div><span class="eq-label">Estabilidade:</span> Δt ≤ <span class="eq-highlight">Δx²/(4α)</span>
+        → Δt atual = <span class="eq-highlight" id="eq-dt">—</span></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: sidebar -->
+  <div class="sidebar">
+
+    <!-- Fase -->
+    <div class="sidebar-section">
+      <div class="section-title">Fase de operação</div>
+      <div class="phase-grid">
+        <button class="phase-btn active-max" id="pb-max"    onclick="setPhase('max')">MÁXIMA</button>
+        <button class="phase-btn"            id="pb-throt"  onclick="setPhase('throt')">THROTTLE</button>
+        <button class="phase-btn"            id="pb-idle"   onclick="setPhase('idle')">IDLE</button>
+      </div>
+    </div>
+
+    <!-- Parâmetros físicos -->
+    <div class="sidebar-section">
+      <div class="section-title">Parâmetros físicos</div>
+
+      <div class="ctrl">
+        <div class="ctrl-header">
+          <div>
+            <div class="ctrl-name">Geração de calor Q</div>
+            <div class="ctrl-sub">potência dos núcleos</div>
+          </div>
+          <div class="ctrl-val" id="v-q">100%</div>
+        </div>
+        <input type="range" min="0" max="200" step="5" value="100" oninput="updateParam('q',this.value)">
+      </div>
+
+      <div class="ctrl">
+        <div class="ctrl-header">
+          <div>
+            <div class="ctrl-name">Difusividade α (×10⁻⁵)</div>
+            <div class="ctrl-sub">Si=9.2 | Cu=116 | Inox=4</div>
+          </div>
+          <div class="ctrl-val" id="v-alpha">9.2</div>
+        </div>
+        <input type="range" min="1" max="120" step="0.5" value="9.2" oninput="updateParam('alpha',this.value)">
+      </div>
+
+      <div class="ctrl">
+        <div class="ctrl-header">
+          <div>
+            <div class="ctrl-name">Convecção h (cooler)</div>
+            <div class="ctrl-sub">0=sem cooler | 0.5=watercooling</div>
+          </div>
+          <div class="ctrl-val" id="v-conv">0.08</div>
+        </div>
+        <input type="range" min="0" max="0.5" step="0.005" value="0.08" oninput="updateParam('conv',this.value)">
+      </div>
+
+      <div class="ctrl">
+        <div class="ctrl-header">
+          <div>
+            <div class="ctrl-name">Temperatura ambiente</div>
+            <div class="ctrl-sub">T das bordas (dissipador)</div>
+          </div>
+          <div class="ctrl-val" id="v-tamb">35°C</div>
+        </div>
+        <input type="range" min="20" max="80" step="1" value="35" oninput="updateParam('tamb',this.value)">
+      </div>
+    </div>
+
+    <!-- Núcleos -->
+    <div class="sidebar-section">
+      <div class="section-title">Núcleos individuais</div>
+      <div class="nuc-grid" id="nuc-grid"></div>
+    </div>
+
+    <!-- Controles de simulação -->
+    <div class="sidebar-section">
+      <div class="section-title">Simulação</div>
+
+      <div class="ctrl">
+        <div class="ctrl-header">
+          <div>
+            <div class="ctrl-name">Velocidade</div>
+            <div class="ctrl-sub">passos por frame</div>
+          </div>
+          <div class="ctrl-val" id="v-speed">3×</div>
+        </div>
+        <input type="range" min="1" max="20" step="1" value="3" oninput="updateParam('speed',this.value)">
+      </div>
+
+      <div class="action-row" style="margin-top:8px">
+        <button class="action-btn accent" id="btn-toggle" onclick="toggleSim()">⏸ Pausar</button>
+        <button class="action-btn" onclick="resetSim()">↺ Reiniciar</button>
+      </div>
+    </div>
+
+    <!-- Presets de material -->
+    <div class="sidebar-section">
+      <div class="section-title">Presets de material</div>
+      <div class="action-row">
+        <button class="action-btn" onclick="setMaterial('si')">Silício</button>
+        <button class="action-btn" onclick="setMaterial('cu')">Cobre</button>
+      </div>
+      <div class="action-row" style="margin-top:6px">
+        <button class="action-btn" onclick="setMaterial('al')">Alumínio</button>
+        <button class="action-btn" onclick="setMaterial('ss')">Inox</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<footer>
+  <span>MDF — Euler Explícito</span>
+  <span>Malha: 100×100 | L = 20×20 mm</span>
+  <span id="ft-dt">Δt = — ms</span>
+  <span id="ft-r">r = —</span>
+  <span>Cond. estab.: r ≤ 0.25</span>
+</footer>
+
+<script>
+/*
+PARÂMETROS FÍSICOS
+*/
+const NX = 100, NY = 100;
+const L  = 0.02;           // domínio 20mm × 20mm
+const DX = L / NX;         // Δx = 0.2 mm
+const DY = L / NY;         // Δy = 0.2 mm
+const RHO = 2330;          // densidade do silício [kg/m³]
+const C_P = 700;           // calor específico [J/(kg·K)]
+const DZ  = 0.0005;        // espessura da placa [m]
+
+let ALPHA  = 9.2e-5;       // difusividade térmica do Si [m²/s]
+let Q_FACTOR = 1.0;        // multiplicador de potência global
+let H_CONV = 0.08;         // coeficiente de convecção [W/(m²·K)] equiv.
+let T_AMB  = 35;           // temperatura das bordas [°C]
+let SPEED  = 3;            // passos por frame
+
+/* Cargas individuais dos 8 núcleos (0–1) */
+const LOADS = [1.0, 0.6, 0.8, 1.0, 0.4, 0.9, 0.3, 0.7];
+
+/* Layout dos núcleos: fração da malha */
+const NUC_POS = [
+  [0.18, 0.28], [0.36, 0.28], [0.61, 0.28], [0.79, 0.28],
+  [0.18, 0.72], [0.36, 0.72], [0.61, 0.72], [0.79, 0.72]
+];
+const RAIO = Math.floor(NX * 0.07);   // raio gaussiano do núcleo
+
+/*
+ESTADO DA SIMULAÇÃO
+*/
+let T = new Float32Array(NX * NY);
+let Q = new Float32Array(NX * NY);
+let step = 0;
+let running = true;
+let raf = null;
+
+/* Sparkline history */
+const SPARK_LEN = 200;
+let sparkTmax = new Array(SPARK_LEN).fill(T_AMB);
+let sparkTmed = new Array(SPARK_LEN).fill(T_AMB);
+
+/*
+FUNÇÕES DE SETUP
+*/
+function idx(i, j) { return i * NY + j; }
+
+function buildQ() {
+  Q.fill(0);
+  for (let n = 0; n < 8; n++) {
+    const [xf, yf] = NUC_POS[n];
+    const ci = Math.round(xf * NX);
+    const cj = Math.round(yf * NY);
+    const pot = LOADS[n] * Q_FACTOR;
+    const s2  = 2 * RAIO * RAIO;
+    for (let i = 0; i < NX; i++) {
+      for (let j = 0; j < NY; j++) {
+        const d2 = (i - ci) ** 2 + (j - cj) ** 2;
+        Q[idx(i, j)] += pot * 5e9 * Math.exp(-d2 / s2);
+      }
+    }
+  }
+}
+
+function initSim() {
+  T.fill(T_AMB);
+  step = 0;
+  sparkTmax.fill(T_AMB);
+  sparkTmed.fill(T_AMB);
+  buildQ();
+}
+
+/*
+PASSO TEMPORAL — MÉTODO DAS DIFERENÇAS FINITAS
+Equação: T_novo = T + Δt·α·∇²T + Δt·Q̃ - Δt·h_conv·(T-T_amb)
+*/
+function computeDT() {
+  /* Critério de estabilidade CFL para difusão 2D: Δt < Δx²/(4α) */
+  return 0.20 * DX * DX / ALPHA;
+}
+
+function stepMDF(nSteps) {
+  const dt    = computeDT();
+  const dx2   = DX * DX;
+  const dy2   = DY * DY;
+  const fconv = H_CONV / (RHO * C_P * DZ);   /* coef. convecção adimensionalizado */
+  const T2 = new Float32Array(NX * NY);
+
+  for (let s = 0; s < nSteps; s++) {
+    /* Pontos internos: i ∈ [1, NX-2], j ∈ [1, NY-2] */
+    for (let i = 1; i < NX - 1; i++) {
+      for (let j = 1; j < NY - 1; j++) {
+        const ij = idx(i, j);
+
+        /* Laplaciano discreto (diferenças centrais de 2ª ordem) */
+        const d2Tdx2 = (T[idx(i+1,j)] - 2*T[ij] + T[idx(i-1,j)]) / dx2;
+        const d2Tdy2 = (T[idx(i,j+1)] - 2*T[ij] + T[idx(i,j-1)]) / dy2;
+
+        /* Geração de calor normalizada [°C/s] */
+        const Q_tilde = Q[ij] / (RHO * C_P);
+
+        /* Euler explícito */
+        T2[ij] = T[ij]
+               + dt * ALPHA * (d2Tdx2 + d2Tdy2)   /* difusão térmica */
+               + dt * Q_tilde                       /* geração de calor */
+               - dt * fconv * (T[ij] - T_AMB);     /* perda convectiva */
+      }
+    }
+
+    /* Copiar pontos internos */
+    for (let i = 1; i < NX-1; i++)
+      for (let j = 1; j < NY-1; j++)
+        T[idx(i,j)] = T2[idx(i,j)];
+
+    /* Condições de contorno: bordas fixas em T_AMB (dissipador) */
+    for (let i = 0; i < NX; i++) {
+      T[idx(i, 0)]    = T_AMB;
+      T[idx(i, NY-1)] = T_AMB;
+    }
+    for (let j = 0; j < NY; j++) {
+      T[idx(0, j)]    = T_AMB;
+      T[idx(NX-1, j)] = T_AMB;
+    }
+
+    step++;
+  }
+}
+
+/*
+RENDERIZAÇÃO — MAPA DE TEMPERATURA
+*/
+const canvas = document.getElementById('cpu');
+const ctx    = canvas.getContext('2d');
+const img    = ctx.createImageData(NX, NY);
+
+/* Ramp de cores: frio (azul escuro) → quente (vermelho escuro) */
+const RAMP = [
+  [26,  26,  94],   /* azul muito escuro */
+  [21,  101, 192],  /* azul */
+  [0,   172, 193],  /* ciano */
+  [67,  160, 71],   /* verde */
+  [253, 216, 53],   /* amarelo */
+  [230, 74,  25],   /* laranja */
+  [183, 28,  28],   /* vermelho */
+];
+
+function tempToColor(t, tMin, tMax) {
+  if (tMax - tMin < 0.5) return [30, 50, 120];
+  const f = Math.max(0, Math.min(1, (t - tMin) / (tMax - tMin)));
+  const seg = (RAMP.length - 1) * f;
+  const i   = Math.min(Math.floor(seg), RAMP.length - 2);
+  const r   = seg - i;
+  const a = RAMP[i], b = RAMP[i+1];
+  return [
+    Math.round(a[0] + (b[0]-a[0]) * r),
+    Math.round(a[1] + (b[1]-a[1]) * r),
+    Math.round(a[2] + (b[2]-a[2]) * r),
+  ];
+}
+
+function renderCanvas() {
+  /* Calcular min/max globais */
+  let mx = -Infinity, mn = Infinity, sum = 0;
+  for (let k = 0; k < NX * NY; k++) {
+    if (T[k] > mx) mx = T[k];
+    if (T[k] < mn) mn = T[k];
+    sum += T[k];
+  }
+  const med = sum / (NX * NY);
+
+  /* Preencher pixels */
+  const d = img.data;
+  for (let i = 0; i < NX; i++) {
+    for (let j = 0; j < NY; j++) {
+      const [r, g, b] = tempToColor(T[idx(i,j)], T_AMB, mx + 1);
+      const p = (j * NX + i) * 4;
+      d[p]=r; d[p+1]=g; d[p+2]=b; d[p+3]=255;
+    }
+  }
+
+  /* Contorno dos núcleos (quadrado branco semitransparente) */
+  for (let n = 0; n < 8; n++) {
+    const ci = Math.round(NUC_POS[n][0] * NX);
+    const cj = Math.round(NUC_POS[n][1] * NY);
+    const r  = RAIO;
+    /* lados superior e inferior */
+    for (let di = -r; di <= r; di++) {
+      const ii = ci + di;
+      if (ii < 0 || ii >= NX) continue;
+      [[cj-r],[cj+r]].forEach(([jj]) => {
+        if (jj >= 0 && jj < NY) {
+          const p = (jj * NX + ii) * 4;
+          d[p]=255; d[p+1]=255; d[p+2]=255; d[p+3]=140;
+        }
+      });
+    }
+    /* lados esquerdo e direito */
+    for (let dj = -r; dj <= r; dj++) {
+      const jj = cj + dj;
+      if (jj < 0 || jj >= NY) continue;
+      [[ci-r],[ci+r]].forEach(([ii]) => {
+        if (ii >= 0 && ii < NX) {
+          const p = (jj * NX + ii) * 4;
+          d[p]=255; d[p+1]=255; d[p+2]=255; d[p+3]=140;
+        }
+      });
+    }
+  }
+
+  ctx.putImageData(img, 0, 0);
+  return { mx, mn, med };
+}
+
+/*
+SPARKLINE (gráfico de histórico)
+*/
+const spark     = document.getElementById('sparkline');
+const sparkCtx  = spark.getContext('2d');
+
+function renderSparkline(mx, med) {
+  sparkTmax.shift(); sparkTmax.push(mx);
+  sparkTmed.shift(); sparkTmed.push(med);
+
+  const W = spark.width, H = spark.height;
+  sparkCtx.clearRect(0, 0, W, H);
+
+  /* fundo */
+  sparkCtx.fillStyle = '#181b22';
+  sparkCtx.fillRect(0, 0, W, H);
+
+  const allVals = [...sparkTmax, ...sparkTmed];
+  const lo = Math.min(...allVals) - 1;
+  const hi = Math.max(...allVals, lo + 1) + 1;
+  const sy = v => H - 4 - (v - lo) / (hi - lo) * (H - 8);
+
+  /* linha limite 90°C */
+  if (hi > 90) {
+    const y90 = sy(90);
+    sparkCtx.strokeStyle = 'rgba(248,113,113,0.3)';
+    sparkCtx.setLineDash([4, 4]);
+    sparkCtx.lineWidth = 1;
+    sparkCtx.beginPath();
+    sparkCtx.moveTo(0, y90);
+    sparkCtx.lineTo(W, y90);
+    sparkCtx.stroke();
+    sparkCtx.setLineDash([]);
+    sparkCtx.fillStyle = 'rgba(248,113,113,0.5)';
+    sparkCtx.font = '9px JetBrains Mono, monospace';
+    sparkCtx.fillText('90°C', 2, y90 - 2);
+  }
+
+  /* T média (linha pontilhada laranja) */
+  sparkCtx.strokeStyle = 'rgba(251,191,36,0.6)';
+  sparkCtx.lineWidth = 1;
+  sparkCtx.setLineDash([2, 3]);
+  sparkCtx.beginPath();
+  sparkTmed.forEach((v, x) => {
+    const px = (x / (SPARK_LEN - 1)) * W;
+    x === 0 ? sparkCtx.moveTo(px, sy(v)) : sparkCtx.lineTo(px, sy(v));
+  });
+  sparkCtx.stroke();
+  sparkCtx.setLineDash([]);
+
+  /* T máxima (linha contínua azul) */
+  sparkCtx.strokeStyle = '#38bdf8';
+  sparkCtx.lineWidth = 1.5;
+  sparkCtx.beginPath();
+  sparkTmax.forEach((v, x) => {
+    const px = (x / (SPARK_LEN - 1)) * W;
+    x === 0 ? sparkCtx.moveTo(px, sy(v)) : sparkCtx.lineTo(px, sy(v));
+  });
+  sparkCtx.stroke();
+
+  /* Label atual */
+  sparkCtx.fillStyle = '#38bdf8';
+  sparkCtx.font = '9px JetBrains Mono, monospace';
+  sparkCtx.textAlign = 'right';
+  sparkCtx.fillText('T_max', W - 2, 10);
+  sparkCtx.fillStyle = 'rgba(251,191,36,0.8)';
+  sparkCtx.fillText('T_med', W - 2, 20);
+  sparkCtx.textAlign = 'left';
+}
+
+/*
+LABELS DOS NÚCLEOS (overlay HTML)
+*/
+function buildNucLabels() {
+  const wrap = document.getElementById('nuc-labels');
+  wrap.innerHTML = '';
+  for (let n = 0; n < 8; n++) {
+    const el = document.createElement('div');
+    el.className = 'nuc-label';
+    el.id = 'nl-' + n;
+    el.style.left = (NUC_POS[n][0] * 100) + '%';
+    el.style.top  = (NUC_POS[n][1] * 100) + '%';
+    el.textContent = 'C' + n;
+    wrap.appendChild(el);
+  }
+}
+
+/*
+GRID DE NÚCLEOS (sidebar)
+*/
+function buildNucGrid() {
+  const grid = document.getElementById('nuc-grid');
+  grid.innerHTML = '';
+  for (let n = 0; n < 8; n++) {
+    const card = document.createElement('div');
+    card.className = 'nuc-card';
+    card.id = 'nc-' + n;
+    card.innerHTML = `
+      <div class="nuc-card-header">
+        <span class="nuc-id">C${n}</span>
+        <span class="nuc-temp" id="nt-${n}">—</span>
+      </div>
+      <div class="nuc-load-val" id="nlv-${n}">${(LOADS[n]*100).toFixed(0)}%</div>
+      <div class="nuc-load-bar">
+        <div class="nuc-load-fill" id="nlf-${n}" style="width:${LOADS[n]*100}%"></div>
+      </div>
+      <input type="range" min="0" max="1" step="0.05" value="${LOADS[n]}"
+        style="width:100%;margin-top:2px"
+        oninput="setNucLoad(${n},this.value)">
+    `;
+    grid.appendChild(card);
+  }
+}
+
+function setNucLoad(n, v) {
+  LOADS[n] = parseFloat(v);
+  document.getElementById('nlv-' + n).textContent = (LOADS[n] * 100).toFixed(0) + '%';
+  document.getElementById('nlf-' + n).style.width = (LOADS[n] * 100) + '%';
+  buildQ();
+}
+
+/*
+ATUALIZAÇÃO DA UI
+*/
+function updateUI(mx, med) {
+  const dt   = computeDT();
+  const r    = ALPHA * dt / (DX * DX);
+  const tmS  = (step * dt * 1000).toFixed(2);
+  const dt_ms = (dt * 1000).toFixed(4);
+
+  /* Overlay */
+  const tmaxEl = document.getElementById('s-tmax');
+  tmaxEl.textContent = mx.toFixed(1) + '°C';
+  tmaxEl.className = 'val' + (mx > 90 ? ' hot' : mx > 70 ? ' warm' : '');
+  document.getElementById('s-tmed').textContent = med.toFixed(1) + '°C';
+  document.getElementById('s-dt').textContent   = (mx - T_AMB).toFixed(1) + '°C';
+  document.getElementById('s-step').textContent = step;
+  document.getElementById('s-time').textContent = tmS + ' ms';
+
+  /* Metrics */
+  const mv = document.getElementById('m-tmax');
+  mv.textContent = mx.toFixed(1) + '°C';
+  mv.className = 'metric-value' + (mx>90?' hot':mx>70?' warm':'');
+  document.getElementById('m-tmed').textContent = med.toFixed(1) + '°C';
+  document.getElementById('m-dt').textContent   = (mx - T_AMB).toFixed(1) + '°C';
+  document.getElementById('m-time').textContent = tmS + ' ms';
+
+  /* Colorbar */
+  document.getElementById('cb-max').textContent = mx.toFixed(0) + '°C';
+
+  /* Critical warning */
+  const crit = mx > 90;
+  document.getElementById('warn-crit').style.display = crit ? 'block' : 'none';
+  document.getElementById('pill-warn').style.display = crit ? 'inline' : 'none';
+
+  /* Footer */
+  document.getElementById('ft-dt').textContent = 'Δt = ' + dt_ms + ' ms';
+  document.getElementById('ft-r').textContent  = 'r = ' + r.toFixed(3) + (r > 0.25 ? ' ⚠' : ' ✓');
+  document.getElementById('eq-dt').textContent = dt_ms + ' ms';
+
+  /* Temperatura nos núcleos */
+  for (let n = 0; n < 8; n++) {
+    const ci = Math.round(NUC_POS[n][0] * NX);
+    const cj = Math.round(NUC_POS[n][1] * NY);
+    const tn = T[idx(ci, cj)];
+    const el = document.getElementById('nt-' + n);
+    if (el) {
+      el.textContent = tn.toFixed(1) + '°C';
+      el.style.color = tn > 85 ? '#f87171' : tn > 65 ? '#fbbf24' : '#34d399';
+    }
+    const card = document.getElementById('nc-' + n);
+    if (card) {
+      card.className = 'nuc-card' + (tn>85?' hot':tn>65?' warm':'');
+    }
+  }
+}
+
+/*
+LOOP PRINCIPAL
+*/
+function loop() {
+  if (running) {
+    stepMDF(SPEED);
+    const { mx, med } = renderCanvas();
+    renderSparkline(mx, med);
+    updateUI(mx, med);
+  }
+  raf = requestAnimationFrame(loop);
+}
+
+/*
+CONTROLES
+*/
+function toggleSim() {
+  running = !running;
+  document.getElementById('btn-toggle').textContent = running ? '⏸ Pausar' : '▶ Retomar';
+}
+
+function resetSim() {
+  initSim();
+  const { mx, med } = renderCanvas();
+  renderSparkline(mx, med);
+  updateUI(mx, med);
+}
+
+function setPhase(p) {
+  const map = { max: 1.0, throt: 0.5, idle: 0.1 };
+  Q_FACTOR = map[p];
+  buildQ();
+
+  ['max','throt','idle'].forEach(k => {
+    const btn = document.getElementById('pb-' + k);
+    btn.className = 'phase-btn' + (k === p ? ' active-' + k : '');
+  });
+
+  const labels = { max:'CARGA MÁXIMA', throt:'THROTTLE 50%', idle:'CPU IDLE' };
+  document.getElementById('pill-phase').textContent = labels[p];
+  document.getElementById('v-q').textContent = Math.round(Q_FACTOR * 100) + '%';
+}
+
+function updateParam(p, v) {
+  const n = parseFloat(v);
+  switch (p) {
+    case 'q':
+      Q_FACTOR = n / 100;
+      document.getElementById('v-q').textContent = Math.round(n) + '%';
+      buildQ();
+      break;
+    case 'alpha':
+      ALPHA = n * 1e-5;
+      document.getElementById('v-alpha').textContent = n.toFixed(1);
+      break;
+    case 'conv':
+      H_CONV = n;
+      document.getElementById('v-conv').textContent = n.toFixed(3);
+      break;
+    case 'tamb':
+      T_AMB = n;
+      document.getElementById('v-tamb').textContent = Math.round(n) + '°C';
+      /* Atualizar bordas imediatamente */
+      for (let i = 0; i < NX; i++) { T[idx(i,0)] = n; T[idx(i,NY-1)] = n; }
+      for (let j = 0; j < NY; j++) { T[idx(0,j)] = n; T[idx(NX-1,j)] = n; }
+      break;
+    case 'speed':
+      SPEED = Math.round(n);
+      document.getElementById('v-speed').textContent = Math.round(n) + '×';
+      break;
+  }
+}
+
+/* Presets de material: α = k/(ρ·c) */
+const MATERIALS = {
+  si: { alpha: 9.2,   label: 'Silício  (Si)' },
+  cu: { alpha: 116.0, label: 'Cobre    (Cu)' },
+  al: { alpha: 84.0,  label: 'Alumínio (Al)' },
+  ss: { alpha: 4.0,   label: 'Inox     (SS)' },
+};
+function setMaterial(m) {
+  const mat = MATERIALS[m];
+  ALPHA = mat.alpha * 1e-5;
+  /* Atualizar slider de alpha */
+  document.querySelector('input[oninput*="alpha"]').value = mat.alpha;
+  document.getElementById('v-alpha').textContent = mat.alpha.toFixed(1);
+}
+
+/*
+INICIALIZAÇÃO
+ */
+buildNucLabels();
+buildNucGrid();
+initSim();
+loop();
+</script>
+</body>
+</html>
