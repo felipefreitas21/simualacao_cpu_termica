@@ -18,17 +18,16 @@ O projeto utiliza uma **lista de adjacência** como estrutura de dados principal
 
 
 ## 3-➕✖️ Modelagem Matemática
-A simulação modela um chip de 20 por 20 milímetros, que é uma escala realista para um processador moderno. Esse chip é dividido em uma grade de 100 por 100 pontos, totalizando 10 mil pontos de temperatura sendo calculados simultaneamente.
-Cada um desses pontos representa uma região física do silício. A temperatura em cada ponto não é um valor fixo — ela muda a cada passo de tempo, influenciada pelos quatro vizinhos ao redor e pela potência que os núcleos estão gerando naquele instante.
-Os 8 núcleos da CPU estão posicionados em dois grupos de quatro, como em um processador real. Cada núcleo tem uma carga configurável de 0 a 100%, e essa carga determina diretamente quanto calor ele injeta no silício ao redor, seguindo uma distribuição gaussiana — mais quente no centro do núcleo, mais frio nas bordas.
-A cada passo da simulação — e isso acontece dezenas de vezes por segundo — o computador percorre os 10 mil pontos da grade e, para cada um deles, executa exatamente a mesma conta que os meus colegas apresentaram: a fórmula da diferença finita.
-Ele pega a temperatura atual do ponto, soma a contribuição dos quatro vizinhos através do laplaciano discreto, adiciona o calor gerado pelo núcleo que está ali, e desconta a perda pelo cooler. O resultado é a temperatura daquele ponto no próximo instante.
-Isso se repete indefinidamente, frame a frame. O que você vê na tela é literalmente o resultado de milhões de operações aritméticas acontecendo em tempo real no seu navegador — estamos falando de algo em torno de 70 milhões de operações por segundo só para manter a simulação rodando a 60 quadros por segundo.
+A simulação modela um chip de 20 por 20 milímetros, que é uma escala realista para um processador moderno. Esse chip é dividido em uma grade de 100 por 100 pontos, totalizando 10 mil pontos de temperatura sendo calculados simultaneamente. <br>
+Cada um desses pontos representa uma região física do silício. A temperatura em cada ponto não é um valor fixo — ela muda a cada passo de tempo, influenciada pelos quatro vizinhos ao redor e pela potência que os núcleos estão gerando naquele instante. <br>
+Os 8 núcleos da CPU estão posicionados em dois grupos de quatro, como em um processador real. Cada núcleo tem uma carga configurável de 0 a 100%, e essa carga determina diretamente quanto calor ele injeta no silício ao redor, seguindo uma distribuição gaussiana — mais quente no centro do núcleo, mais frio nas bordas. <br>
+A cada passo da simulação — e isso acontece dezenas de vezes por segundo — o computador percorre os 10 mil pontos da grade e, para cada um deles, executa exatamente a mesma conta que os meus colegas apresentaram: a fórmula da diferença finita. <br>
+Ele pega a temperatura atual do ponto, soma a contribuição dos quatro vizinhos através do laplaciano discreto, adiciona o calor gerado pelo núcleo que está ali, e desconta a perda pelo cooler. O resultado é a temperatura daquele ponto no próximo instante. <br>
+Isso se repete indefinidamente, frame a frame. O que você vê na tela é literalmente o resultado de milhões de operações aritméticas acontecendo em tempo real no seu navegador — estamos falando de algo em torno de 70 milhões de operações por segundo só para manter a simulação rodando a 60 quadros por segundo. <br>
 
 ## 3.1 - Condição de Estabilidade 
-Antes de qualquer iteração acontecer, a simulação calcula automaticamente o passo de tempo seguro. Esse valor não é arbitrário — ele é determinado pelo critério de estabilidade do método explícito, que diz que o passo de tempo precisa ser menor que o quadrado do espaçamento da malha dividido por quatro vezes a difusividade térmica.
-Para o nosso silício, isso nos dá um passo de tempo máximo de cerca de 0,109 milissegundos. A simulação usa 80% desse valor como margem de segurança. Se você ultrapassar esse limite, os erros não somem — eles se amplificam. A temperatura começa a oscilar e divergir em poucos passos. A simulação, na prática, explode numericamente.
-💡 Observação: Optou-se por modelar a rede como um grafo não dirigido, uma vez que o interesse está na conectividade geral da rede e não no sentido do tráfego. Dessa forma, foi aplicado o algoritmo de Tarjan, que utiliza a Busca em Profundidade (DFS), para identificação de vértices de articulação (pontos críticos).
+Antes de qualquer iteração acontecer, a simulação calcula automaticamente o passo de tempo seguro. Esse valor não é arbitrário — ele é determinado pelo critério de estabilidade do método explícito, que diz que o passo de tempo precisa ser menor que o quadrado do espaçamento da malha dividido por quatro vezes a difusividade térmica. <br>
+Para o nosso silício, isso nos dá um passo de tempo máximo de cerca de 0,109 milissegundos. A simulação usa 80% desse valor como margem de segurança. Se você ultrapassar esse limite, os erros não somem — eles se amplificam. A temperatura começa a oscilar e divergir em poucos passos. A simulação, na prática, explode numericamente.<br>
 
 ## 4-🧩 O que Cada Elemento Visual Representa
 
