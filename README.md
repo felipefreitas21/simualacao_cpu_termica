@@ -32,13 +32,12 @@ Para o nosso silício, isso nos dá um passo de tempo máximo de cerca de 0,109 
 ## 4-🧩 O que Cada Elemento Visual Representa
 
 O mapa de cores — o heatmap — é a tradução direta do campo de temperatura. O azul escuro representa regiões próximas à temperatura ambiente, em torno de 35 graus. Conforme a temperatura sobe, a cor vai passando por ciano, verde, amarelo, laranja, até o vermelho escuro nas regiões mais quentes.
-<img>
+<img href="imagens_readme/mapa_calor.png"> <br>
 
-As caixas brancas pontilhadas marcam a posição de cada núcleo. Você consegue ver claramente como o calor se origina ali e vai se espalhando pelo silício ao redor — esse espalhamento é exatamente a difusão térmica modelada pela equação de Fourier.
-<img>
+As caixas brancas pontilhadas marcam a posição de cada núcleo. Você consegue ver claramente como o calor se origina ali e vai se espalhando pelo silício ao redor — esse espalhamento é exatamente a difusão térmica modelada pela equação de Fourier.<br>
 
-O gráfico de linha no canto inferior — a sparkline — mostra como a temperatura máxima e a temperatura média evoluíram desde o início da simulação. Quando a linha sobe rápido, os núcleos estão em carga alta. Quando ela estabiliza, o sistema chegou ao equilíbrio térmico, onde a geração de calor e a dissipação pelo cooler se igualam.
-<img>
+O gráfico de linha no canto inferior — a sparkline — mostra como a temperatura máxima e a temperatura média evoluíram desde o início da simulação. Quando a linha sobe rápido, os núcleos estão em carga alta. Quando ela estabiliza, o sistema chegou ao equilíbrio térmico, onde a geração de calor e a dissipação pelo cooler se igualam. <br>
+<img href="imagens_readme/variacaotmax.png">
 
 
 - **Arestas**: conexões entre eles.  
